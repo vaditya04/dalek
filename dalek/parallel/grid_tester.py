@@ -13,7 +13,8 @@ import logging
 import copy
 from dalek.parallel.util import set_engines_cpu_affinity
 
-#Following are attempts to get queue_parameter_set_list working with simple_worker method
+#Following are attempts to get queue_parameter_set_list working with simple_worker method. 
+#Maybe they can be used to fix the problem, but for now I'm of the opinion that we need to rewrite the function
 import copy_reg
 import types
 import pickle
