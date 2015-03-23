@@ -178,15 +178,20 @@ class BaseLauncher(object):
 
         # print len(parameter_set_list)
         # config_atom_dataset = [(parameter_set_list[k],copy.deepcopy(atom_data)) for k in range(len(parameter_set_list))]
-        atom_dataset = [copy.deepcopy(atom_data) for k in range(len(parameter_set_list))]
         # print config_atom_dataset
          # self.config_dicts = [copy.deepcopy(config_dict) for k in range(16)]
         # copy_reg.pickle(types.MethodType, _pickle_method, _unpickle_method)
         # copy_reg.pickle(types.MethodType,reduce_method )
         # pickled_worker = pickle.loads(pickle.dumps(self.worker))
-        return self.lbv.map(self.worker, parameter_set_list, atom_dataset)
-        # return self.lbv.map(self.worker, config_atom_dataset)
-        # return "nope"
+
+        #Temporary fix until a solution for pickling for map function is found - This method is merely
+        #running apply on a loop
+        atom_dataset = [copy.deepcopy(atom_data) for k in range(len(parameter_set_list))]
+        # ans = []
+        # for i in range(len(parameter_set_list)):
+            # ans.append(self.lbv.apply(self.worker, parameter_set_list[i], atom_dataset[i]))
+        # return ans
+        return self.lbv.map(self.worker, atom_dataset)
 
     def queue_run_tardis(self, config_dict, atom_data = None):
         return self.lbv.apply(run_tardis,config_dict,atom_data)
@@ -224,7 +229,7 @@ class GridBuilder(BaseOptimizer):
         # initial_param_collection = ParameterCollection(
             # OrderedDict([('param.x', x_params), ('param.y', y_params)]))
         # initial_param_collection['dalek.fitness'] = np.nan
-        return dict([('x',x_params),('y',y_params)])
+        return dict([("x",x_params),("y",y_params)])
 
 class TestGridRunner(object):
 
@@ -234,36 +239,21 @@ class TestGridRunner(object):
         self.grid_builder = GridBuilder((0, 0.005), (0.2, 0.6), 4)
         self.grid_params= self.grid_builder.init_parameter_collection()
         self.config_dicts = [copy.deepcopy(config_dict) for k in range(16)]
-        temp_dict = {'model':{'abundances':{'O' : 0, 'Si' : 0}}}
+        temp_dict = {"O" : 0, "Si" : 0}
         self.param_dicts = [copy.deepcopy(temp_dict) for k in range(16)]
         print "Assigning abundance values to parameter dictionaries:"
         for i in range(4):
             for j in range(4):
-                self.param_dicts[4*i+j]['model']['abundances']['O'] = self.grid_params['x'][i]
-                self.param_dicts[4*i+j]['model']['abundances']['Si'] = self.grid_params['y'][j]
-
-        # print "Passing parameter dicts to Parameter Collection applydict method to get config dicts with changed values"
-        # for i in range(len(self.config_dicts)):
-            # self.config_dicts[i] = pc.apply_dict(copy.deepcopy(config_dict), self.param_dicts[i])
-            # print self.config_dicts[i].items()
-
-        # Apply Dict Method does not work for some reason. Need to verify. For now, manually updating the grid
-
-        print "Manually updating values"
-        for i in range(4):
-            for j in range(4):
-                self.config_dicts[4*i+j]['model']['abundances']['O'] = self.grid_params['x'][i]
-                self.config_dicts[4*i+j]['model']['abundances']['Si'] = self.grid_params['y'][j]
-                print self.config_dicts[4*i+j].items()
-                print self.grid_params['x'][i], " ", self.grid_params['y'][j], " "
-
+                self.param_dicts[4*i+j]["O"] = self.grid_params["x"][i]
+                self.param_dicts[4*i+j]["Si"] = self.grid_params["y"][j]
+                self.config_dicts[4*i+j]['model']['abundances'] = pc.apply_dict(config_dict['model']['abundances'], self.param_dicts[4*i+j])
         print "Instantiating BaseLauncher"
         rc = Client()
         print rc.ids
         blauncher = BaseLauncher(remote_clients = rc, atom_data = atom_data)
+        runner = []
         for i in range(len(self.config_dicts)):
-           runner = blauncher.queue_parameter_set(self.config_dicts[i], atom_data) 
-           print "Output:", i
-           runner.wait()
-           runner.display_outputs()
-           # runner.display_outputs()
+            runner.append(blauncher.queue_parameter_set(self.config_dicts[i], atom_data))
+        for i in range(len(self.config_dicts)):
+            runner[i].wait()
+            runner[i].display_outputs()
