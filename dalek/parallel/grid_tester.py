@@ -226,9 +226,6 @@ class GridBuilder(BaseOptimizer):
         y_params = np.random.uniform(self.y_bounds[0], self.y_bounds[1],
                                      self.no_sets_in_collection)
 
-        # initial_param_collection = ParameterCollection(
-            # OrderedDict([('param.x', x_params), ('param.y', y_params)]))
-        # initial_param_collection['dalek.fitness'] = np.nan
         return dict([("x",x_params),("y",y_params)])
 
 class TestGridRunner(object):
