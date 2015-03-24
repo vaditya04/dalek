@@ -93,6 +93,7 @@ class BaseLauncher(object):
         self.prepare_remote_clients(remote_clients, atom_data)
         self.worker = worker
         self.lbv = remote_clients.load_balanced_view()
+        self.remote_clients[:].use_dill()   #This fixes the pickling error, now map function can be used
 
 
     @staticmethod

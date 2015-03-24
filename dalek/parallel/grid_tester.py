@@ -1,7 +1,7 @@
 from dalek.fitter import BaseFitter, BaseOptimizer
 from dalek.fitter import FitterConfiguration
 import dalek.parallel.parameter_collection as pc
-# from dalek.parallel.parameter_collection import ParameterCollection2
+import time
 import numpy as np
 from collections import OrderedDict
 import pytest
@@ -13,13 +13,6 @@ import logging
 import copy
 from dalek.parallel.util import set_engines_cpu_affinity
 
-#Following are attempts to get queue_parameter_set_list working with simple_worker method. 
-#Maybe they can be used to fix the problem, but for now I'm of the opinion that we need to rewrite the function
-import copy_reg
-import types
-import pickle
-from functools import wraps
-
 try:
     from tardis import run_tardis
 except ImportError:
@@ -28,42 +21,6 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-def _pickle_method(method):
-    """
-    Pickle methods properly, including class methods.
-    """
-    func_name = method.im_func.__name__
-    obj = method.im_self
-    cls = method.im_class
-    if isinstance(cls, type):
-        # handle classmethods differently
-        cls = obj
-        obj = None
-    if func_name.startswith('__') and not func_name.endswith('__'):
-        #deal with mangled names
-        cls_name = cls.__name__.lstrip('_')
-        func_name = '_%s%s' % (cls_name, func_name)
-
-    return _unpickle_method, (func_name, obj, cls)
-
-def _unpickle_method(func_name, obj, cls):
-    """
-    Unpickle methods properly, including class methods.
-    """
-    if obj is None:
-        return cls.__dict__[func_name].__get__(obj, cls)
-    for cls in cls.__mro__:
-        try:
-            func = cls.__dict__[func_name]
-        except KeyError:
-            pass
-        else:
-            break
-    return func.__get__(obj, cls)
-
-def reduce_method(m):
-    return (getattr, (m.__self__, m.__func__.__name__))
-#end unsucessful methods
 @interactive
 def simple_worker(config_dict, atom_data=None):
     """
@@ -118,7 +75,7 @@ class BaseLauncher(object):
         self.prepare_remote_clients(remote_clients, atom_data)
         self.worker = worker
         self.lbv = remote_clients.load_balanced_view()
-
+        self.remote_clients[:].use_dill()   #This fixes the pickling error, now map function can be used
 
     @staticmethod
     def prepare_remote_clients(clients, atom_data):
@@ -163,7 +120,6 @@ class BaseLauncher(object):
         """
         return self.lbv.apply(self.worker, parameter_set_dict, atom_data=atom_data)
 
-#This function does not work with simple_worker right now due to it being an instance method with a decorator on top of it
     def queue_parameter_set_list(self, parameter_set_list,
                                       atom_data=None):
         """
@@ -176,25 +132,8 @@ class BaseLauncher(object):
             a list of valid configuration dictionary for TARDIS
         """
 
-        # print len(parameter_set_list)
-        # config_atom_dataset = [(parameter_set_list[k],copy.deepcopy(atom_data)) for k in range(len(parameter_set_list))]
-        # print config_atom_dataset
-         # self.config_dicts = [copy.deepcopy(config_dict) for k in range(16)]
-        # copy_reg.pickle(types.MethodType, _pickle_method, _unpickle_method)
-        # copy_reg.pickle(types.MethodType,reduce_method )
-        # pickled_worker = pickle.loads(pickle.dumps(self.worker))
-
-        #Temporary fix until a solution for pickling for map function is found - This method is merely
-        #running apply on a loop
         atom_dataset = [copy.deepcopy(atom_data) for k in range(len(parameter_set_list))]
-        # ans = []
-        # for i in range(len(parameter_set_list)):
-            # ans.append(self.lbv.apply(self.worker, parameter_set_list[i], atom_dataset[i]))
-        # return ans
-        return self.lbv.map(self.worker, atom_dataset)
-
-    def queue_run_tardis(self, config_dict, atom_data = None):
-        return self.lbv.apply(run_tardis,config_dict,atom_data)
+        return self.lbv.map(self.worker, parameter_set_list, atom_dataset )
             
 class GridBuilder(BaseOptimizer):
 
@@ -248,9 +187,11 @@ class TestGridRunner(object):
         rc = Client()
         print rc.ids
         blauncher = BaseLauncher(remote_clients = rc, atom_data = atom_data)
-        runner = []
-        for i in range(len(self.config_dicts)):
-            runner.append(blauncher.queue_parameter_set(self.config_dicts[i], atom_data))
-        for i in range(len(self.config_dicts)):
-            runner[i].wait()
-            runner[i].display_outputs()
+        runners = blauncher.queue_parameter_set_list(self.config_dicts, atom_data)
+        try:
+            runners.wait()
+        except Exception, e:
+            print 'Completed run'
+            time.sleep(1)
+            runners.display_outputs()
+        return runners
